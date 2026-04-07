@@ -1,0 +1,395 @@
+{
+  "metadata": {
+    "version": "2.0",
+    "last_updated": "2026-04-07T22:08:24",
+    "total_groups": 6,
+    "tag_categories": [
+      "경쟁사",
+      "자사기술",
+      "시장동향",
+      "친환경선박",
+      "규제·인증",
+      "기술동향"
+    ]
+  },
+  "keyword_groups": [
+    {
+      "id": "kg_001",
+      "group_name": "GTT 및 경쟁사 동향",
+      "description": "시장 지배자 GTT와 경쟁 기술 모니터링",
+      "is_active": true,
+      "created_at": "2025-03-31",
+      "tags": [
+        "경쟁사",
+        "기술동향"
+      ],
+      "keywords_label": [
+        "GTT",
+        "Mark III",
+        "멤브레인"
+      ],
+      "query": {
+        "must": [
+          "GTT"
+        ],
+        "any": [
+          "Mark III",
+          "NO96",
+          "화물창",
+          "CCS",
+          "멤브레인",
+          "라이선스",
+          "수주",
+          "계약",
+          "크라이오젠",
+          "Mark III Flex",
+          "설계 승인"
+        ],
+        "exclude": [
+          "주가",
+          "투자",
+          "ETF"
+        ]
+      },
+      "query_en": {
+        "must": [
+          "GTT"
+        ],
+        "any": [
+          "Mark III Flex",
+          "NO96",
+          "membrane containment",
+          "LNG containment",
+          "license",
+          "order",
+          "cryogen",
+          "AiP"
+        ],
+        "exclude": [
+          "stock",
+          "investment"
+        ]
+      },
+      "stats": {
+        "last_collected_at": "2026-04-06T22:23:37",
+        "article_count_7d": 144,
+        "article_count_30d": 144,
+        "total_article_count": 144
+      }
+    },
+    {
+      "id": "kg_002",
+      "group_name": "중국 화물창 기술",
+      "description": "중국의 자체 화물창 개발 및 시장 진출 동향",
+      "is_active": true,
+      "created_at": "2025-03-31",
+      "tags": [
+        "경쟁사",
+        "기술동향"
+      ],
+      "keywords_label": [
+        "중국",
+        "CSSC",
+        "CIMC"
+      ],
+      "query": {
+        "must": [
+          "중국"
+        ],
+        "any": [
+          "화물창",
+          "LNG선",
+          "CSSC",
+          "CIMC",
+          "Wison",
+          "독자기술",
+          "자국산"
+        ],
+        "exclude": [
+          "관광",
+          "음식",
+          "부동산"
+        ]
+      },
+      "query_en": {
+        "must": [
+          "China"
+        ],
+        "any": [
+          "LNG carrier",
+          "CSSC",
+          "CIMC Enric",
+          "Wison",
+          "containment system",
+          "indigenous"
+        ],
+        "exclude": [
+          "tourism",
+          "food"
+        ]
+      },
+      "stats": {
+        "last_collected_at": "2026-04-06T22:23:43",
+        "article_count_7d": 169,
+        "article_count_30d": 169,
+        "total_article_count": 169
+      }
+    },
+    {
+      "id": "kg_003",
+      "group_name": "한국형 화물창",
+      "description": "KC-1, KCS 등 한국 독자 기술 인증 및 적용 동향",
+      "is_active": true,
+      "created_at": "2025-03-31",
+      "tags": [
+        "자사기술",
+        "규제·인증"
+      ],
+      "keywords_label": [
+        "KC-1",
+        "KCS",
+        "국산화"
+      ],
+      "query": {
+        "must": [
+          "화물창"
+        ],
+        "any": [
+          "KC-1",
+          "KCS",
+          "한국형",
+          "국산화",
+          "선급",
+          "DNV",
+          "LR",
+          "ABS",
+          "인증"
+        ],
+        "exclude": [
+          "GTT",
+          "중국"
+        ]
+      },
+      "query_en": {
+        "must": [
+          "containment"
+        ],
+        "any": [
+          "KC-1",
+          "KCS",
+          "Korean",
+          "classification",
+          "DNV",
+          "Lloyd",
+          "ABS",
+          "approval"
+        ],
+        "exclude": [
+          "GTT",
+          "China"
+        ]
+      },
+      "stats": {
+        "last_collected_at": "2026-04-06T22:23:50",
+        "article_count_7d": 216,
+        "article_count_30d": 216,
+        "total_article_count": 216
+      }
+    },
+    {
+      "id": "kg_004",
+      "group_name": "LNG 운반선 시장",
+      "description": "LNG선 발주·수주·시장 전반 동향",
+      "is_active": true,
+      "created_at": "2025-03-31",
+      "tags": [
+        "시장동향"
+      ],
+      "keywords_label": [
+        "LNG",
+        "운반선",
+        "발주"
+      ],
+      "query": {
+        "must": [
+          "LNG"
+        ],
+        "any": [
+          "운반선",
+          "LNG선",
+          "발주",
+          "수주",
+          "조선",
+          "현대중공업",
+          "삼성중공업",
+          "한화오션",
+          "카타르",
+          "QatarEnergy",
+          "에탄운반선",
+          "LNG 연료탱크",
+          "초대형 LNG선",
+          "쇄빙 LNG선",
+          "친환경 선박"
+        ],
+        "exclude": [
+          "가스요금",
+          "도시가스",
+          "충전소"
+        ]
+      },
+      "query_en": {
+        "must": [
+          "LNG"
+        ],
+        "any": [
+          "LNG carrier",
+          "LNG newbuild",
+          "order",
+          "shipbuilding",
+          "HHI",
+          "SHI",
+          "QatarEnergy",
+          "Hanwha",
+          "ethane carrier",
+          "LNG fuel tank",
+          "VLEC",
+          "ice-breaking LNG carrier",
+          "eco-friendly vessel"
+        ],
+        "exclude": [
+          "gas price",
+          "retail"
+        ]
+      },
+      "stats": {
+        "last_collected_at": "2026-04-06T22:23:56",
+        "article_count_7d": 258,
+        "article_count_30d": 258,
+        "total_article_count": 258
+      }
+    },
+    {
+      "id": "kg_005",
+      "group_name": "암모니아 운반선",
+      "description": "암모니아 추진·운반 기술 및 시장 동향",
+      "is_active": true,
+      "created_at": "2025-03-31",
+      "tags": [
+        "친환경선박",
+        "시장동향"
+      ],
+      "keywords_label": [
+        "암모니아",
+        "운반선",
+        "IGC"
+      ],
+      "query": {
+        "must": [
+          "암모니아"
+        ],
+        "any": [
+          "운반선",
+          "추진",
+          "연료",
+          "화물창",
+          "탱크",
+          "IGC",
+          "선급",
+          "발주",
+          "수주"
+        ],
+        "exclude": [
+          "농업",
+          "비료",
+          "공장",
+          "폭발"
+        ]
+      },
+      "query_en": {
+        "must": [
+          "ammonia"
+        ],
+        "any": [
+          "ammonia carrier",
+          "ammonia-fueled",
+          "vessel",
+          "containment",
+          "IGC code",
+          "order"
+        ],
+        "exclude": [
+          "agriculture",
+          "fertilizer",
+          "explosion"
+        ]
+      },
+      "stats": {
+        "last_collected_at": "2026-04-06T22:24:03",
+        "article_count_7d": 257,
+        "article_count_30d": 257,
+        "total_article_count": 257
+      }
+    },
+    {
+      "id": "kg_006",
+      "group_name": "수소 운반선",
+      "description": "액화수소 운반·저장 기술 및 상용화 동향",
+      "is_active": true,
+      "created_at": "2025-03-31",
+      "tags": [
+        "친환경선박",
+        "기술동향"
+      ],
+      "keywords_label": [
+        "수소",
+        "LH2",
+        "극저온"
+      ],
+      "query": {
+        "must": [
+          "수소"
+        ],
+        "any": [
+          "운반선",
+          "액화수소",
+          "LH2",
+          "저장탱크",
+          "화물창",
+          "Kawasaki",
+          "수소선박",
+          "극저온"
+        ],
+        "exclude": [
+          "수소차",
+          "수소충전소",
+          "수소버스",
+          "태양광"
+        ]
+      },
+      "query_en": {
+        "must": [
+          "hydrogen"
+        ],
+        "any": [
+          "liquid hydrogen carrier",
+          "LH2",
+          "cryogenic hydrogen",
+          "hydrogen vessel",
+          "Kawasaki",
+          "storage tank"
+        ],
+        "exclude": [
+          "hydrogen car",
+          "fuel cell vehicle",
+          "solar"
+        ]
+      },
+      "stats": {
+        "last_collected_at": "2026-04-06T22:24:09",
+        "article_count_7d": 178,
+        "article_count_30d": 178,
+        "total_article_count": 178
+      }
+    }
+  ]
+}
