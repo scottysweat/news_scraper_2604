@@ -82,6 +82,18 @@ monthly_stats = Table(
     Column("created_at",        Text),
 )
 
+daily_reports = Table(
+    "daily_reports", metadata,
+    Column("id",              Integer, primary_key=True, autoincrement=True),
+    Column("report_date",     Text, nullable=False),
+    Column("status",          Text),
+    Column("article_count",   Integer, default=0),
+    Column("duplicate_count", Integer, default=0),
+    Column("pdf_path",        Text),
+    Column("error_message",   Text),
+    Column("created_at",      Text),
+)
+
 # ─────────────────────────────────────────
 # 인덱스
 # ─────────────────────────────────────────
@@ -92,6 +104,7 @@ Index("idx_articles_collect",  articles.c.collected_at)
 Index("idx_articles_score",    articles.c.score_importance, articles.c.score_relevance)
 Index("idx_articles_lang",     articles.c.language)
 Index("idx_stats_month",       monthly_stats.c.year_month, monthly_stats.c.keyword_group_id)
+Index("idx_daily_reports_date", daily_reports.c.report_date)
 
 
 # ─────────────────────────────────────────

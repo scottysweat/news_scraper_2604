@@ -10,6 +10,10 @@ on:
         description: "Maximum number of unanalysed articles to process"
         required: false
         default: "1000"
+      report_limit:
+        description: "Maximum number of articles to include in the PDF report"
+        required: false
+        default: "20"
 
 concurrency:
   group: daily-news-update
@@ -22,7 +26,11 @@ jobs:
     env:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      SENDGRID_API_KEY: ${{ secrets.SENDGRID_API_KEY }}
+      REPORT_FROM_EMAIL: ${{ secrets.REPORT_FROM_EMAIL }}
+      REPORT_TO_EMAILS: ${{ secrets.REPORT_TO_EMAILS }}
       ANALYZE_LIMIT: ${{ github.event.inputs.analyze_limit || '1000' }}
+      REPORT_LIMIT: ${{ github.event.inputs.report_limit || '20' }}
 
     steps:
       - name: Check out repository
@@ -47,7 +55,13 @@ jobs:
 
           missing = [
               name
-              for name in ("DATABASE_URL", "ANTHROPIC_API_KEY")
+              for name in (
+                  "DATABASE_URL",
+                  "ANTHROPIC_API_KEY",
+                  "SENDGRID_API_KEY",
+                  "REPORT_FROM_EMAIL",
+                  "REPORT_TO_EMAILS",
+              )
               if not os.environ.get(name)
           ]
           if missing:
@@ -64,3 +78,6 @@ jobs:
 
       - name: Analyze collected news
         run: python analyzer.py --batch --limit "$ANALYZE_LIMIT"
+
+      - name: Send daily PDF report
+        run: python reporter.py --days 30 --limit "$REPORT_LIMIT" --min-relevance 6
