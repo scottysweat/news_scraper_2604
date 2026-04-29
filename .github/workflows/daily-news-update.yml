@@ -1,0 +1,66 @@
+name: Daily news update
+
+on:
+  schedule:
+    # 06:00 KST every day. GitHub Actions cron uses UTC.
+    - cron: "0 21 * * *"
+  workflow_dispatch:
+    inputs:
+      analyze_limit:
+        description: "Maximum number of unanalysed articles to process"
+        required: false
+        default: "1000"
+
+concurrency:
+  group: daily-news-update
+  cancel-in-progress: false
+
+jobs:
+  update-news:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      ANALYZE_LIMIT: ${{ github.event.inputs.analyze_limit || '1000' }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Validate required secrets
+        run: |
+          python - <<'PY'
+          import os
+          import sys
+
+          missing = [
+              name
+              for name in ("DATABASE_URL", "ANTHROPIC_API_KEY")
+              if not os.environ.get(name)
+          ]
+          if missing:
+              print("Missing required GitHub Actions secrets: " + ", ".join(missing))
+              sys.exit(1)
+          print("Required secrets are configured.")
+          PY
+
+      - name: Prepare database tables
+        run: python db_setup.py
+
+      - name: Collect latest news
+        run: python collector.py
+
+      - name: Analyze collected news
+        run: python analyzer.py --batch --limit "$ANALYZE_LIMIT"
