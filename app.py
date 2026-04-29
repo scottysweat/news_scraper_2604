@@ -39,6 +39,8 @@ TAG_COLORS = {
 }
 DEFAULT_TAG_COLOR  = "#7f8c8d"
 LABEL_COLOR        = "#bdc3c7"   # keywords_label 뱃지 (회색)
+DEFAULT_NEWS_DAYS  = 30
+MAX_ARTICLES_SHOWN = 100
 
 # ─────────────────────────────────────────
 # DB 조회
@@ -55,8 +57,8 @@ def load_keyword_groups_from_db():
     return rows
 
 
-def load_articles(group_id=None, date_from=None, date_to=None):
-    """분석 완료 기사를 관련도 내림차순으로 반환."""
+def load_articles(group_id=None, date_from=None, date_to=None, limit=MAX_ARTICLES_SHOWN):
+    """최근 분석 완료 기사를 관련도 내림차순으로 반환."""
     if not db_available():
         return []
     conn  = get_conn()
@@ -80,8 +82,10 @@ def load_articles(group_id=None, date_from=None, date_to=None):
         f"FROM   articles a "
         f"LEFT JOIN keyword_groups k ON a.keyword_group_id = k.id "
         f"{where} "
-        f"ORDER BY a.score_relevance DESC, a.score_importance DESC"
+        f"ORDER BY a.score_relevance DESC, a.score_importance DESC, a.published_at DESC "
+        f"LIMIT :limit"
     )
+    params["limit"] = limit
     rows = conn.execute(sql, params).mappings().fetchall()
     conn.close()
     return rows
@@ -420,18 +424,11 @@ with st.sidebar:
         news_group_id = kg_map[sel_name]
 
         today = date.today()
-        use_date = st.checkbox("날짜 범위 필터 사용", value=False)
+        default_s = today - timedelta(days=DEFAULT_NEWS_DAYS)
+        news_date_from = default_s
+        news_date_to   = today
+        use_date = st.checkbox("날짜 범위 필터 사용", value=True)
         if use_date:
-            # DB 최솟값을 기본 시작일로 사용
-            try:
-                _conn = get_conn()
-                _min = _conn.execute(
-                    text("SELECT MIN(published_at) FROM articles WHERE is_analyzed=1")
-                ).fetchone()[0]
-                _conn.close()
-                default_s = date.fromisoformat((_min or "2020-01-01")[:10])
-            except Exception:
-                default_s = today - timedelta(days=365)
 
             date_range = st.date_input(
                 "발행일 범위",
@@ -442,6 +439,9 @@ with st.sidebar:
                 news_date_from, news_date_to = date_range
             elif isinstance(date_range, (list, tuple)) and len(date_range) == 1:
                 news_date_from = date_range[0]
+        else:
+            news_date_from = None
+            news_date_to   = None
 
         min_rel = st.slider("최소 관련도 점수", 1, 10, 1)
 
@@ -476,7 +476,10 @@ with st.sidebar:
 # ═══════════════════════════════════════════
 if menu == "📰 뉴스 리스트":
     st.title("📰 AI 분석 뉴스 리스트")
-    st.caption("Claude가 분석한 뉴스를 관련도 순으로 표시합니다.")
+    st.caption(
+        f"Claude가 분석한 뉴스를 관련도 순으로 표시합니다. "
+        f"기본 조회는 최근 {DEFAULT_NEWS_DAYS}일, 최대 {MAX_ARTICLES_SHOWN}건입니다."
+    )
     st.divider()
 
     articles = load_articles(news_group_id, news_date_from, news_date_to)
