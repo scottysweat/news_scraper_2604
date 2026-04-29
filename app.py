@@ -2,13 +2,15 @@ import streamlit as st
 import json
 import os
 import re
-import sqlite3
 import pandas as pd
 from collections import Counter
 from datetime import datetime, date, timedelta
 
 from anthropic import Anthropic
 from dotenv import load_dotenv
+from sqlalchemy import text
+
+from database import get_conn, db_available, IS_POSTGRES
 
 load_dotenv()
 
@@ -43,11 +45,11 @@ LABEL_COLOR        = "#bdc3c7"   # keywords_label 뱃지 (회색)
 # ─────────────────────────────────────────
 def load_keyword_groups_from_db():
     """keyword_groups 테이블에서 활성 그룹 목록 반환."""
-    if not os.path.exists(DB_FILE):
+    if not db_available():
         return []
-    conn = sqlite3.connect(DB_FILE)
+    conn = get_conn()
     rows = conn.execute(
-        "SELECT id, group_name FROM keyword_groups WHERE is_active=1 ORDER BY group_name"
+        text("SELECT id, group_name FROM keyword_groups WHERE is_active=1 ORDER BY group_name")
     ).fetchall()
     conn.close()
     return rows
@@ -55,35 +57,32 @@ def load_keyword_groups_from_db():
 
 def load_articles(group_id=None, date_from=None, date_to=None):
     """분석 완료 기사를 관련도 내림차순으로 반환."""
-    if not os.path.exists(DB_FILE):
+    if not db_available():
         return []
-    conn = sqlite3.connect(DB_FILE)
-    conn.row_factory = sqlite3.Row
-
-    sql = """
-        SELECT a.id, a.title, a.url, a.source, a.published_at,
-               a.score_relevance, a.score_importance,
-               a.summary, a.keywords,
-               k.group_name
-        FROM   articles a
-        LEFT JOIN keyword_groups k ON a.keyword_group_id = k.id
-        WHERE  a.is_analyzed = 1
-    """
-    params = []
+    conn  = get_conn()
+    where = "WHERE a.is_analyzed = 1"
+    params: dict = {}
 
     if group_id:
-        sql += " AND a.keyword_group_id = ?"
-        params.append(group_id)
+        where += " AND a.keyword_group_id = :gid"
+        params["gid"] = group_id
     if date_from:
-        sql += " AND a.published_at >= ?"
-        params.append(str(date_from))
+        where += " AND a.published_at >= :dfrom"
+        params["dfrom"] = str(date_from)
     if date_to:
-        sql += " AND a.published_at <= ?"
-        params.append(str(date_to) + "T23:59:59")
+        where += " AND a.published_at <= :dto"
+        params["dto"] = str(date_to) + "T23:59:59"
 
-    sql += " ORDER BY a.score_relevance DESC, a.score_importance DESC"
-
-    rows = conn.execute(sql, params).fetchall()
+    sql = text(
+        f"SELECT a.id, a.title, a.url, a.source, a.published_at, "
+        f"       a.score_relevance, a.score_importance, "
+        f"       a.summary, a.keywords, k.group_name "
+        f"FROM   articles a "
+        f"LEFT JOIN keyword_groups k ON a.keyword_group_id = k.id "
+        f"{where} "
+        f"ORDER BY a.score_relevance DESC, a.score_importance DESC"
+    )
+    rows = conn.execute(sql, params).mappings().fetchall()
     conn.close()
     return rows
 
@@ -120,14 +119,17 @@ def keyword_tag_html(word):
 # ─────────────────────────────────────────
 def save_feedback(article_id: int, feedback: str) -> None:
     """피드백을 article_feedback 테이블에 저장 (기존 값은 대체)."""
-    conn = sqlite3.connect(DB_FILE)
+    conn = get_conn()
     conn.execute(
-        "DELETE FROM article_feedback WHERE article_id = ?",
-        (article_id,),
+        text("DELETE FROM article_feedback WHERE article_id = :aid"),
+        {"aid": article_id},
     )
     conn.execute(
-        "INSERT INTO article_feedback (article_id, feedback, created_at) VALUES (?, ?, ?)",
-        (article_id, feedback, datetime.now().strftime("%Y-%m-%dT%H:%M:%S")),
+        text(
+            "INSERT INTO article_feedback (article_id, feedback, created_at) "
+            "VALUES (:aid, :fb, :ts)"
+        ),
+        {"aid": article_id, "fb": feedback, "ts": datetime.now().strftime("%Y-%m-%dT%H:%M:%S")},
     )
     conn.commit()
     conn.close()
@@ -137,19 +139,17 @@ def load_feedback_map(article_ids: list) -> dict:
     """article_id → 최신 feedback 값 딕셔너리 반환."""
     if not article_ids:
         return {}
-    conn = sqlite3.connect(DB_FILE)
-    placeholders = ",".join("?" * len(article_ids))
+    conn = get_conn()
+    # IN 절은 방언별로 처리
+    placeholders = ",".join(str(i) for i in article_ids)
     rows = conn.execute(
-        f"""
-        SELECT article_id, feedback
-        FROM   article_feedback
-        WHERE  article_id IN ({placeholders})
-        ORDER  BY created_at DESC
-        """,
-        article_ids,
+        text(
+            f"SELECT article_id, feedback FROM article_feedback "
+            f"WHERE  article_id IN ({placeholders}) "
+            f"ORDER  BY created_at DESC"
+        )
     ).fetchall()
     conn.close()
-    # 가장 최신 피드백만 유지 (article_id 기준)
     result = {}
     for aid, fb in rows:
         if aid not in result:
@@ -187,55 +187,48 @@ def parse_lines(text):
 # ─────────────────────────────────────────
 def load_feedback_stats() -> dict:
     """피드백 집계 결과를 딕셔너리로 반환."""
-    if not os.path.exists(DB_FILE):
+    if not db_available():
         return {}
-    conn = sqlite3.connect(DB_FILE)
+    conn = get_conn()
 
-    # 전체 요약
-    row = conn.execute("""
-        SELECT
-            COUNT(*)                                                   AS total,
-            SUM(CASE WHEN feedback='good' THEN 1 ELSE 0 END)          AS good,
-            SUM(CASE WHEN feedback='bad'  THEN 1 ELSE 0 END)          AS bad
+    row = conn.execute(text("""
+        SELECT COUNT(*),
+               SUM(CASE WHEN feedback='good' THEN 1 ELSE 0 END),
+               SUM(CASE WHEN feedback='bad'  THEN 1 ELSE 0 END)
         FROM article_feedback
-    """).fetchone()
+    """)).fetchone()
     if not row or row[0] == 0:
         conn.close()
         return {}
     total, good, bad = row
 
-    # 키워드 그룹별 집계
-    by_group = conn.execute("""
-        SELECT
-            COALESCE(a.keyword_group_name, '(미분류)') AS grp,
-            SUM(CASE WHEN f.feedback='good' THEN 1 ELSE 0 END) AS good,
-            SUM(CASE WHEN f.feedback='bad'  THEN 1 ELSE 0 END) AS bad,
-            COUNT(*)                                            AS total
+    by_group = conn.execute(text("""
+        SELECT COALESCE(a.keyword_group_name, '(미분류)') AS grp,
+               SUM(CASE WHEN f.feedback='good' THEN 1 ELSE 0 END) AS good,
+               SUM(CASE WHEN f.feedback='bad'  THEN 1 ELSE 0 END) AS bad,
+               COUNT(*) AS total
         FROM article_feedback f
         JOIN articles a ON f.article_id = a.id
         GROUP BY grp
         ORDER BY good DESC
-    """).fetchall()
+    """)).fetchall()
 
-    # 소스별 집계 (2건 이상인 소스만)
-    by_source = conn.execute("""
-        SELECT
-            COALESCE(a.source, '(출처없음)')                          AS src,
-            SUM(CASE WHEN f.feedback='good' THEN 1 ELSE 0 END)        AS good,
-            SUM(CASE WHEN f.feedback='bad'  THEN 1 ELSE 0 END)        AS bad,
-            COUNT(*)                                                   AS total,
-            ROUND(100.0 * SUM(CASE WHEN f.feedback='good' THEN 1 ELSE 0 END)
-                        / COUNT(*), 1)                                 AS good_rate
+    by_source = conn.execute(text("""
+        SELECT COALESCE(a.source, '(출처없음)') AS src,
+               SUM(CASE WHEN f.feedback='good' THEN 1 ELSE 0 END) AS good,
+               SUM(CASE WHEN f.feedback='bad'  THEN 1 ELSE 0 END) AS bad,
+               COUNT(*) AS total,
+               ROUND(100.0 * SUM(CASE WHEN f.feedback='good' THEN 1 ELSE 0 END)
+                           / COUNT(*), 1) AS good_rate
         FROM article_feedback f
         JOIN articles a ON f.article_id = a.id
         WHERE a.source IS NOT NULL AND a.source != ''
         GROUP BY src
         HAVING COUNT(*) >= 1
         ORDER BY good_rate DESC, total DESC
-    """).fetchall()
+    """)).fetchall()
 
-    # 도움됨 상위 기사 (최대 10건)
-    top_good = conn.execute("""
+    top_good = conn.execute(text("""
         SELECT a.title, a.source, a.score_relevance, a.score_importance,
                a.keyword_group_name, a.published_at
         FROM article_feedback f
@@ -243,17 +236,16 @@ def load_feedback_stats() -> dict:
         WHERE f.feedback = 'good'
         ORDER BY a.score_relevance DESC, a.score_importance DESC
         LIMIT 10
-    """).fetchall()
+    """)).fetchall()
 
-    # 관련없음 상위 기사 (최대 5건)
-    top_bad = conn.execute("""
+    top_bad = conn.execute(text("""
         SELECT a.title, a.source, a.score_relevance, a.keyword_group_name
         FROM article_feedback f
         JOIN articles a ON f.article_id = a.id
         WHERE f.feedback = 'bad'
         ORDER BY f.created_at DESC
         LIMIT 5
-    """).fetchall()
+    """)).fetchall()
 
     conn.close()
     return {
@@ -283,13 +275,16 @@ _EN_STOPWORDS = {
 
 def get_recent_article_titles(days: int = 30) -> list:
     """최근 N일 수집 기사 제목 목록 반환."""
-    if not os.path.exists(DB_FILE):
+    if not db_available():
         return []
-    conn = sqlite3.connect(DB_FILE)
+    conn   = get_conn()
     cutoff = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%S")
-    rows = conn.execute(
-        "SELECT title FROM articles WHERE collected_at >= ? AND title IS NOT NULL LIMIT 800",
-        (cutoff,),
+    rows   = conn.execute(
+        text(
+            "SELECT title FROM articles "
+            "WHERE collected_at >= :cutoff AND title IS NOT NULL LIMIT 800"
+        ),
+        {"cutoff": cutoff},
     ).fetchall()
     conn.close()
     return [r[0] for r in rows if r[0]]
@@ -429,9 +424,9 @@ with st.sidebar:
         if use_date:
             # DB 최솟값을 기본 시작일로 사용
             try:
-                _conn = sqlite3.connect(DB_FILE)
+                _conn = get_conn()
                 _min = _conn.execute(
-                    "SELECT MIN(published_at) FROM articles WHERE is_analyzed=1"
+                    text("SELECT MIN(published_at) FROM articles WHERE is_analyzed=1")
                 ).fetchone()[0]
                 _conn.close()
                 default_s = date.fromisoformat((_min or "2020-01-01")[:10])
@@ -558,8 +553,8 @@ if menu == "📰 뉴스 리스트":
                             save_feedback(art_id, new_fb)
                         else:
                             # 이미 good → 취소
-                            conn = sqlite3.connect(DB_FILE)
-                            conn.execute("DELETE FROM article_feedback WHERE article_id=?", (art_id,))
+                            conn = get_conn()
+                            conn.execute(text("DELETE FROM article_feedback WHERE article_id=:aid"), {"aid": art_id})
                             conn.commit(); conn.close()
                         st.session_state[fb_key][art_id] = new_fb
                         st.rerun()
@@ -573,8 +568,8 @@ if menu == "📰 뉴스 리스트":
                         if new_fb:
                             save_feedback(art_id, new_fb)
                         else:
-                            conn = sqlite3.connect(DB_FILE)
-                            conn.execute("DELETE FROM article_feedback WHERE article_id=?", (art_id,))
+                            conn = get_conn()
+                            conn.execute(text("DELETE FROM article_feedback WHERE article_id=:aid"), {"aid": art_id})
                             conn.commit(); conn.close()
                         st.session_state[fb_key][art_id] = new_fb
                         st.rerun()

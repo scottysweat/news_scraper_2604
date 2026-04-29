@@ -11,13 +11,15 @@ Phase 2: keywords.json의 키워드로 RSS 수집 → news.db 저장
     pip install feedparser requests
 """
 
-import sqlite3
 import json
 import os
 import time
 import argparse
 from datetime import datetime, timedelta
 from urllib.parse import quote
+
+from sqlalchemy import text
+from database import get_conn, db_available, insert_ignore_sql
 
 # feedparser, requests는 실행 시 import
 try:
@@ -30,7 +32,6 @@ except ImportError:
 # ─────────────────────────────────────────
 # 설정값
 # ─────────────────────────────────────────
-DB_FILE           = "news.db"
 KEYWORDS_FILE     = "keywords.json"
 REQUEST_DELAY     = 2          # 요청 간 대기 시간(초) — 구글 차단 방지
 MAX_ENTRIES       = 100        # RSS 한 번에 최대 수집 건수
@@ -134,34 +135,35 @@ def parse_rss(url, language="ko"):
 # ─────────────────────────────────────────
 def save_articles(conn, articles, group_id, group_name):
     """기사 목록을 DB에 저장. 중복 URL은 자동 무시."""
-    cursor = conn.cursor()
-    saved  = 0
+    saved      = 0
     duplicates = 0
-    now = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+    now        = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+
+    cols = [
+        "keyword_group_id", "keyword_group_name", "title", "url",
+        "source", "language", "published_at", "collected_at",
+        "is_analyzed", "retention",
+    ]
+    sql = text(insert_ignore_sql("articles", cols))
 
     for a in articles:
         if not a.get("title") or not a.get("url"):
             continue
-        try:
-            cursor.execute("""
-                INSERT INTO articles
-                (keyword_group_id, keyword_group_name, title, url,
-                 source, language, published_at, collected_at,
-                 is_analyzed, retention)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, '1year')
-            """, (
-                group_id,
-                group_name,
-                a["title"],
-                a["url"],
-                a.get("source", ""),
-                a.get("language", "ko"),
-                a.get("published_at"),
-                now
-            ))
+        result = conn.execute(sql, {
+            "keyword_group_id":   group_id,
+            "keyword_group_name": group_name,
+            "title":              a["title"],
+            "url":                a["url"],
+            "source":             a.get("source", ""),
+            "language":           a.get("language", "ko"),
+            "published_at":       a.get("published_at"),
+            "collected_at":       now,
+            "is_analyzed":        0,
+            "retention":          "1year",
+        })
+        if result.rowcount > 0:
             saved += 1
-        except sqlite3.IntegrityError:
-            # URL UNIQUE 제약 위반 = 중복 기사 → 조용히 무시
+        else:
             duplicates += 1
 
     conn.commit()
@@ -173,25 +175,30 @@ def save_articles(conn, articles, group_id, group_name):
 # ─────────────────────────────────────────
 def update_stats(conn, group_id):
     """DB에서 집계해서 실제 통계 반환"""
-    cursor = conn.cursor()
-    now    = datetime.now()
-    d7     = (now - timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:%S")
-    d30    = (now - timedelta(days=30)).strftime("%Y-%m-%dT%H:%M:%S")
+    now = datetime.now()
+    d7  = (now - timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:%S")
+    d30 = (now - timedelta(days=30)).strftime("%Y-%m-%dT%H:%M:%S")
 
-    cursor.execute("SELECT COUNT(*) FROM articles WHERE keyword_group_id=?", (group_id,))
-    total = cursor.fetchone()[0]
+    total = conn.execute(
+        text("SELECT COUNT(*) FROM articles WHERE keyword_group_id=:gid"),
+        {"gid": group_id},
+    ).fetchone()[0]
 
-    cursor.execute("SELECT COUNT(*) FROM articles WHERE keyword_group_id=? AND collected_at>=?", (group_id, d7))
-    count_7d = cursor.fetchone()[0]
+    count_7d = conn.execute(
+        text("SELECT COUNT(*) FROM articles WHERE keyword_group_id=:gid AND collected_at>=:d"),
+        {"gid": group_id, "d": d7},
+    ).fetchone()[0]
 
-    cursor.execute("SELECT COUNT(*) FROM articles WHERE keyword_group_id=? AND collected_at>=?", (group_id, d30))
-    count_30d = cursor.fetchone()[0]
+    count_30d = conn.execute(
+        text("SELECT COUNT(*) FROM articles WHERE keyword_group_id=:gid AND collected_at>=:d"),
+        {"gid": group_id, "d": d30},
+    ).fetchone()[0]
 
     return {
         "last_collected_at":   now.strftime("%Y-%m-%dT%H:%M:%S"),
         "article_count_7d":    count_7d,
         "article_count_30d":   count_30d,
-        "total_article_count": total
+        "total_article_count": total,
     }
 
 
@@ -216,12 +223,18 @@ def sync_stats_to_json(stats_map):
 
 def sync_stats_to_db(conn, group_id, stats):
     """수집 통계를 DB keyword_groups 테이블에도 반영"""
-    cursor = conn.cursor()
-    cursor.execute("""
-        UPDATE keyword_groups
-        SET last_collected_at = ?, updated_at = ?
-        WHERE id = ?
-    """, (stats["last_collected_at"], stats["last_collected_at"], group_id))
+    conn.execute(
+        text(
+            "UPDATE keyword_groups "
+            "SET last_collected_at=:lat, updated_at=:upd "
+            "WHERE id=:gid"
+        ),
+        {
+            "lat": stats["last_collected_at"],
+            "upd": stats["last_collected_at"],
+            "gid": group_id,
+        },
+    )
     conn.commit()
 
 
@@ -285,11 +298,11 @@ def run_collector(target_group_id=None, test_mode=False):
         return
 
     # ── DB 연결 ──
-    if not os.path.exists(DB_FILE):
-        print(f"❌ {DB_FILE} 파일이 없습니다. 먼저 db_setup.py를 실행해주세요.")
+    if not db_available():
+        print("❌ DB에 연결할 수 없습니다. db_setup.py를 먼저 실행해주세요.")
         return
 
-    conn = sqlite3.connect(DB_FILE)
+    conn = get_conn()
 
     # ── keywords.json 읽기 ──
     if not os.path.exists(KEYWORDS_FILE):

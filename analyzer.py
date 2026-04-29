@@ -10,11 +10,12 @@ analyzer.py — Claude API를 이용한 뉴스 분석 모듈
 import json
 import os
 import re
-import sqlite3
 import time
 from datetime import datetime
 
 from anthropic import Anthropic
+from sqlalchemy import text
+from database import get_conn, column_exists
 
 # ─────────────────────────────────────────
 # 상수
@@ -121,43 +122,34 @@ def analyze_news(title: str, source: str, published_at: str) -> dict:
 # ─────────────────────────────────────────
 # 배치 처리
 # ─────────────────────────────────────────
-DB_FILE = "news.db"
 BATCH_LIMIT = 100
-DELAY_SEC = 0.5
+DELAY_SEC   = 0.5
 
 
-def _ensure_keywords_column(conn: sqlite3.Connection) -> None:
+def _ensure_keywords_column(conn) -> None:
     """articles 테이블에 keywords 컬럼이 없으면 추가한다."""
-    cur = conn.execute("PRAGMA table_info(articles)")
-    columns = {row[1] for row in cur.fetchall()}
-    if "keywords" not in columns:
-        conn.execute("ALTER TABLE articles ADD COLUMN keywords TEXT")
+    if not column_exists(conn, "articles", "keywords"):
+        conn.execute(text("ALTER TABLE articles ADD COLUMN keywords TEXT"))
         conn.commit()
 
 
-def run_batch(db_path: str = DB_FILE, limit: int = BATCH_LIMIT) -> None:
-    """미분석(is_analyzed=0) 뉴스를 최대 limit건 분석해 DB에 저장한다.
-
-    Args:
-        db_path: SQLite DB 파일 경로
-        limit:   최대 처리 건수 (기본 100)
-    """
-    conn = sqlite3.connect(db_path)
-    conn.row_factory = sqlite3.Row
+def run_batch(limit: int = BATCH_LIMIT) -> None:
+    """미분석(is_analyzed=0) 뉴스를 최대 limit건 분석해 DB에 저장한다."""
+    conn = get_conn()
 
     _ensure_keywords_column(conn)
 
     rows = conn.execute(
-        """
-        SELECT id, title, source, published_at, collected_at
-        FROM   articles
-        WHERE  is_analyzed = 0
-           AND score_relevance IS NULL
-        ORDER BY collected_at DESC
-        LIMIT  ?
-        """,
-        (limit,),
-    ).fetchall()
+        text(
+            "SELECT id, title, source, published_at, collected_at "
+            "FROM   articles "
+            "WHERE  is_analyzed = 0 "
+            "  AND  score_relevance IS NULL "
+            "ORDER BY collected_at DESC "
+            "LIMIT  :lim"
+        ),
+        {"lim": limit},
+    ).mappings().fetchall()
 
     total = len(rows)
     if total == 0:
@@ -169,12 +161,12 @@ def run_batch(db_path: str = DB_FILE, limit: int = BATCH_LIMIT) -> None:
     print("-" * 50)
 
     success = 0
-    fail = 0
+    fail    = 0
 
     for idx, row in enumerate(rows, start=1):
         article_id = row["id"]
-        title      = row["title"]      or ""
-        source     = row["source"]     or ""
+        title      = row["title"]       or ""
+        source     = row["source"]      or ""
         pub_at     = row["published_at"] or ""
 
         print(f"[{idx}/{total}] id={article_id} | {title[:40]}", end=" ... ", flush=True)
@@ -183,24 +175,24 @@ def run_batch(db_path: str = DB_FILE, limit: int = BATCH_LIMIT) -> None:
             result = analyze_news(title, source, pub_at)
 
             conn.execute(
-                """
-                UPDATE articles
-                SET    score_relevance  = ?,
-                       score_importance = ?,
-                       summary          = ?,
-                       keywords         = ?,
-                       analyzed_at      = ?,
-                       is_analyzed      = 1
-                WHERE  id = ?
-                """,
-                (
-                    result["relevance"],
-                    result["importance"],
-                    result["summary"],
-                    json.dumps(result["keywords"], ensure_ascii=False),
-                    datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
-                    article_id,
+                text(
+                    "UPDATE articles "
+                    "SET    score_relevance  = :rel, "
+                    "       score_importance = :imp, "
+                    "       summary          = :summary, "
+                    "       keywords         = :keywords, "
+                    "       analyzed_at      = :analyzed_at, "
+                    "       is_analyzed      = 1 "
+                    "WHERE  id = :aid"
                 ),
+                {
+                    "rel":         result["relevance"],
+                    "imp":         result["importance"],
+                    "summary":     result["summary"],
+                    "keywords":    json.dumps(result["keywords"], ensure_ascii=False),
+                    "analyzed_at": datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
+                    "aid":         article_id,
+                },
             )
             conn.commit()
             print(f"완료 (관련도={result['relevance']}, 중요도={result['importance']})")
@@ -239,7 +231,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if args.batch:
-        run_batch(limit=args.limit)
+        run_batch(limit=args.limit)  # db_path 파라미터 제거됨
     else:
         sample = {
             "title": "글로벌 LNG 수요, 2030년까지 연 5% 성장 전망",
